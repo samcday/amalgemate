@@ -114,7 +114,7 @@ func main() {
 			w.WriteHeader(404)
 		}
 
-		fmt.Printf("Found %s in repo %s", gem, repo)
+		fmt.Printf("Found %s in repo %s\n", gem, repo)
 
 		http.Redirect(w, r, fmt.Sprintf("%sgems/%s", repo, gem), http.StatusMovedPermanently)
 	})
