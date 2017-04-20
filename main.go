@@ -32,20 +32,18 @@ func init() {
 }
 
 func depQuery(gems []string) ([]gemInfo, error) {
-	var all [][]gemInfo
+	all := make([][]gemInfo, len(reposFlag))
 
-	for _, repo := range reposFlag {
+	for i, repo := range reposFlag {
 		deps, err := loadDependencies(gems, repo)
 		if err != nil {
 			return nil, err
 		}
-		all = append(all, deps)
+		all[i] = deps
 	}
 
 	deps := mergeDependencies(all)
-
 	updateGemDir(deps)
-
 	return deps, nil
 }
 
@@ -54,12 +52,7 @@ func updateGemDir(deps []gemInfo) {
 	defer gemDirLock.Unlock()
 
 	for _, dep := range deps {
-		suffix := ""
-		if dep.Platform != "ruby" {
-			suffix = fmt.Sprintf("-%s", dep.Platform)
-		}
-
-		gemDir[fmt.Sprintf("%s-%s%s", dep.Name, dep.Version, suffix)] = dep.repo
+		gemDir[dep.ident()] = dep.repo
 	}
 }
 
@@ -109,14 +102,6 @@ func main() {
 		fmt.Println(r.URL)
 		http.DefaultServeMux.ServeHTTP(w, r)
 	}))
-}
-
-type gemInfo struct {
-	repo         *url.URL
-	Name         string     `rmarsh:"name"`
-	Version      string     `rmarsh:"number"`
-	Platform     string     `rmarsh:"platform"`
-	Dependencies [][]string `rmarsh:"dependencies"`
 }
 
 func loadDependencies(deps []string, repo *url.URL) ([]gemInfo, error) {
@@ -173,4 +158,20 @@ func (s *repos) Set(v string) error {
 
 	*s = append(*s, u)
 	return nil
+}
+
+type gemInfo struct {
+	repo         *url.URL
+	Name         string     `rmarsh:"name"`
+	Version      string     `rmarsh:"number"`
+	Platform     string     `rmarsh:"platform"`
+	Dependencies [][]string `rmarsh:"dependencies"`
+}
+
+func (g *gemInfo) ident() string {
+	suffix := ""
+	if g.Platform != "ruby" {
+		suffix = fmt.Sprintf("-%s", g.Platform)
+	}
+	return fmt.Sprintf("%s-%s%s", g.Name, g.Version, suffix)
 }
