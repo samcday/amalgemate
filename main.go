@@ -31,8 +31,6 @@ func init() {
 	gemDir = make(map[string]*url.URL)
 }
 
-type dependencyItem map[rmarsh.Symbol]interface{}
-
 func depQuery(gems []string) ([]gemInfo, error) {
 	var all [][]gemInfo
 
@@ -57,11 +55,11 @@ func updateGemDir(deps []gemInfo) {
 
 	for _, dep := range deps {
 		suffix := ""
-		if dep.platform != "ruby" {
-			suffix = fmt.Sprintf("-%s", dep.platform)
+		if dep.Platform != "ruby" {
+			suffix = fmt.Sprintf("-%s", dep.Platform)
 		}
 
-		gemDir[fmt.Sprintf("%s-%s%s", dep.name, dep.version, suffix)] = dep.repo
+		gemDir[fmt.Sprintf("%s-%s%s", dep.Name, dep.Version, suffix)] = dep.repo
 	}
 }
 
@@ -86,21 +84,7 @@ func main() {
 			return
 		}
 
-		var resp []dependencyItem
-		for _, item := range result {
-			var deps [][]string
-			for _, d := range item.deps {
-				deps = append(deps, []string{d.name, d.ver})
-			}
-			resp = append(resp, dependencyItem{
-				rmarsh.Symbol("name"):         item.name,
-				rmarsh.Symbol("number"):       item.version,
-				rmarsh.Symbol("platform"):     item.platform,
-				rmarsh.Symbol("dependencies"): deps,
-			})
-		}
-
-		rmarsh.NewEncoder(w).Encode(resp)
+		rmarsh.NewEncoder(w).Encode(result)
 	})
 
 	http.HandleFunc("/gems/", func(w http.ResponseWriter, r *http.Request) {
@@ -128,59 +112,11 @@ func main() {
 }
 
 type gemInfo struct {
-	repo                    *url.URL
-	name, version, platform string
-	deps                    []*gemDepInfo
-}
-
-func (gi *gemInfo) fromMarshal(v interface{}) error {
-	item, ok := v.(map[interface{}]interface{})
-	if !ok {
-		return fmt.Errorf("Unexpected type %T in dependencies data", v)
-	}
-	for k, v := range item {
-		sym, ok := k.(rmarsh.Symbol)
-		if !ok {
-			return fmt.Errorf("Unexpected type %T in dependencies data", k)
-		}
-
-		if sym == rmarsh.Symbol("name") {
-			gi.name = v.(string)
-		} else if sym == rmarsh.Symbol("number") {
-			gi.version = v.(string)
-		} else if sym == rmarsh.Symbol("platform") {
-			gi.platform = v.(string)
-		} else if sym == rmarsh.Symbol("dependencies") {
-			for _, dep := range v.([]interface{}) {
-				gpi := new(gemDepInfo)
-				gpi.fromMarshal(dep)
-				gi.deps = append(gi.deps, gpi)
-			}
-		}
-	}
-
-	return nil
-}
-
-type gemDepInfo struct {
-	name, ver string
-}
-
-func (gpi *gemDepInfo) fromMarshal(v interface{}) error {
-	item, ok := v.([]interface{})
-	if !ok {
-		return fmt.Errorf("Unexpected type %T in dependencies data", v)
-	}
-
-	for i, x := range item {
-		if i == 0 {
-			gpi.name = x.(string)
-		} else if i == 1 {
-			gpi.ver = x.(string)
-		}
-	}
-
-	return nil
+	repo         *url.URL
+	Name         string     `rmarsh:"name"`
+	Version      string     `rmarsh:"number"`
+	Platform     string     `rmarsh:"platform"`
+	Dependencies [][]string `rmarsh:"dependencies"`
 }
 
 func loadDependencies(deps []string, repo *url.URL) ([]gemInfo, error) {
@@ -192,29 +128,13 @@ func loadDependencies(deps []string, repo *url.URL) ([]gemInfo, error) {
 	}
 
 	r := rmarsh.NewDecoder(res.Body)
-	raw, err := r.Decode()
-	if err != nil {
+	var results []gemInfo
+	if err := r.Decode(&results); err != nil {
 		return nil, err
 	}
 
-	var results []gemInfo
-
-	if raw == nil {
-		return results, nil
-	}
-
-	rawl, ok := raw.([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("Unexpected type %T in dependencies data", raw)
-	}
-
-	for _, x := range rawl {
-		info := new(gemInfo)
-		info.repo = repo
-		if err := info.fromMarshal(x); err != nil {
-			return nil, err
-		}
-		results = append(results, *info)
+	for _, r := range results {
+		r.repo = repo
 	}
 
 	return results, nil
@@ -227,7 +147,7 @@ func mergeDependencies(deps [][]gemInfo) []gemInfo {
 
 	for _, rdeps := range deps {
 		for _, dep := range rdeps {
-			id := fmt.Sprintf("%s-%s-%s", dep.name, dep.version, dep.platform)
+			id := fmt.Sprintf("%s-%s-%s", dep.Name, dep.Version, dep.Platform)
 			if _, ok := seen[id]; ok {
 				continue
 			}
