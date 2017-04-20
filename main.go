@@ -32,14 +32,33 @@ func init() {
 }
 
 func depQuery(gems []string) ([]gemInfo, error) {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
 	all := make([][]gemInfo, len(reposFlag))
+	var repoErr error
 
 	for i, repo := range reposFlag {
-		deps, err := loadDependencies(gems, repo)
-		if err != nil {
-			return nil, err
-		}
-		all[i] = deps
+		wg.Add(1)
+		go func(i int) {
+			deps, err := loadDependencies(gems, repo)
+
+			mu.Lock()
+			if err != nil {
+				if repoErr == nil {
+					repoErr = err
+				}
+			} else {
+				all[i] = deps
+			}
+			mu.Unlock()
+			wg.Done()
+		}(i)
+	}
+
+	wg.Wait()
+
+	if repoErr != nil {
+		return nil, repoErr
 	}
 
 	deps := mergeDependencies(all)
@@ -89,10 +108,10 @@ func main() {
 
 		if !found {
 			w.WriteHeader(404)
+			return
 		}
 
 		fmt.Printf("Found %s in repo %s\n", gem, repo)
-
 		http.Redirect(w, r, fmt.Sprintf("%sgems/%s", repo, gem), http.StatusMovedPermanently)
 	})
 
@@ -118,8 +137,8 @@ func loadDependencies(deps []string, repo *url.URL) ([]gemInfo, error) {
 		return nil, err
 	}
 
-	for _, r := range results {
-		r.repo = repo
+	for i := range results {
+		results[i].repo = repo
 	}
 
 	return results, nil
